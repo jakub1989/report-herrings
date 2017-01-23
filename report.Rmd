@@ -1,0 +1,196 @@
+---
+title: "Herrings length report"
+author: "Jakub Kwitowski"
+date: "22 stycznia 2017"
+output:
+  html_document:
+    toc: true
+    theme: united
+    keep_md: true
+    number_sections: true
+---
+
+# ANALIZA PROBLEMU
+W zwi¹zku z ró¿nego rodzaju czynnikami zauwa¿ono stopniowy spadek rozmiaru œledzia oceanicznego wy³awianego w Europie. Analizie zosta³ poddany zbiór danych opisujacy pomiary œledzi i warunki w jakich ¿y³y z ostatnich 60 lat. Celem raportu jest próba odnalezienia zale¿noœci, które maj¹ wp³yw na rozmiar œledzia.
+
+
+# ANALIZA DANYCH
+Dane by³y pobierane z po³owów komercyjnych jednostek. W ramach po³owu jednej jednostki losowo wybierano od 50 do 100 sztuk trzyletnich œledzi. Zbiór sk³ada siê z 52583 wierszy u³o¿onych chronologicznie.
+
+Opisy kolumn wystêpuj¹cych w zbiorze
+
+| Kolumna        | Opis                                                                 |
+| ------------- |:---------------------------------------------------------------------|
+| length      | d³ugoœæ z³owionego œledzia [cm] |
+| cfin1      | dostêpnoœæ planktonu [zagêszczenie Calanus finmarchicus gat. 1];      |
+| cfin2 | dostêpnoœæ planktonu [zagêszczenie Calanus finmarchicus gat. 2];      |
+| chel1 | dostêpnoœæ planktonu [zagêszczenie Calanus helgolandicus gat. 1];      |
+| chel2 | dostêpnoœæ planktonu [zagêszczenie Calanus helgolandicus gat. 2];      |
+| lcop1 | dostêpnoœæ planktonu [zagêszczenie wid³onogów gat. 1];     |
+| lcop2 | dostêpnoœæ planktonu [zagêszczenie wid³onogów gat. 2];      |
+| fbar | natê¿enie po³owów w regionie [u³amek pozostawionego narybku];      |
+| recr | roczny narybek [liczba œledzi];      |
+| cumf | ³¹czne roczne natê¿enie po³owów w regionie [u³amek pozostawionego narybku];      |
+| totaln | ³¹czna liczba ryb z³owionych w ramach po³owu [liczba œledzi];     |
+| sst | temperatura przy powierzchni wody [°C];      |
+| sal | poziom zasolenia wody [Knudsen ppt]; |
+| xmonth | miesi¹c po³owu [numer miesi¹ca];     |
+| nao |oscylacja pó³nocnoatlantycka [mb]. |
+
+
+
+#BIBLIOTEKI
+
+Analiza danych zosta³a wykonana w oparciu o poni¿sze biblioteki 
+```{r warning=FALSE, error=FALSE}
+library(readr)
+library(dplyr)
+library(knitr)
+library(shiny)
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(randomForest)
+
+```
+
+oraz zosta³a zapewniona powtarzalnoœæ wyników
+```{r warning=FALSE, error=FALSE}
+set.seed(1)
+```
+
+#CZYSZCZENIE ZBIORU
+Zbiór zosta³ wczytany a brakuj¹ce dane zosta³y zast¹pione przez symbol "NA" w celu ³atwiejszego póŸniejszego przetwarzania
+```{r warning=FALSE, error=FALSE}
+herrings <- read_csv("C:/Users/Jacob/Desktop/Raport/sledzie.csv", col_names = TRUE, na = c("?", "NA"))
+```
+
+Wszystkie pola NA zosta³y zast¹pione œredni¹ wartoœci¹ z danej kolumny w której wyst¹pi³a brakuj¹ca wartoœæ
+```{r warning=FALSE, error=FALSE}
+herringsReplaceByMean <- herrings
+columnMean <- colMeans(herringsReplaceByMean, na.rm=TRUE)
+index <- which(is.na(herringsReplaceByMean), arr.ind=TRUE)
+herringsReplaceByMean[index] <- columnMean[index[,2]]
+```
+
+#PODSUMOWANIE ZBIORU
+Zbiór danych historycznych jest pokaŸny. Zawiera szczegó³owe dane statystyczne z dla ka¿dego œledzia.
+
+1. Liczba wierszy w zbiorze
+```{r warning=FALSE, error=FALSE}
+knitr::kable(nrow(herringsReplaceByMean))
+```
+
+2. Liczba kolumn w zbiorze
+```{r warning=FALSE, error=FALSE}
+knitr::kable(ncol(herringsReplaceByMean))
+```
+
+3. Padsumowanie statystyczne:
+Tabela zawiera wartoœci minimalne, maksymalne, mediany, œrednie dla wszyskich zmienny w zbiorze
+```{r warning=FALSE, error=FALSE}
+knitr::kable(summary(herringsReplaceByMean))
+```
+
+
+#ANALIZA WARTOŒCI ZMIENNYCH
+Dla ka¿dej zmiennej (oprócz porz¹dkowej) mo¿emy dokonaæ analizy histogramów i gêstoœci rozk³adu wartoœci. Dziêki temu zaobserwowa³em i¿ zbiór nie posiada wartoœci odstaj¹cych dlatego nie ma koniecznoœci podejmowania prób ich eliminacji. 
+
+```{r warning=FALSE, error=FALSE}
+for(i in names(herringsReplaceByMean)){
+  ggplot(herringsReplaceByMean, aes(x=herringsReplaceByMean[i])) + geom_histogram(aes(fill = ..count..)) + scale_fill_gradient("Count", low = "#132b44", high = "#55b1f7") + labs(x=i, y="count")
+  
+  ggplot(herringsReplaceByMean, aes(x=herringsReplaceByMean[i])) + geom_density() + labs(x=i, y="density")
+  
+ }
+
+```
+
+#KORELACJA MIÊDZY ZMIENNYMI
+Dziêki heatmapie czyli graficznemu przedstawienie korelacji miêdzy zmiennymi mo¿emy zaobserowaæ ciekawe zale¿noœci, które wystêpuj¹ miêdzy zmiennymi w zbiorze.
+
+```{r warning=FALSE, error=FALSE}
+corrplot(cor(herringsReplaceByMean), type = "upper", order = "hclust", tl.col = "black", tl.srt = 45)
+
+```
+
+Wykres pokazuje doœæ silne trywialne korelacje dodatnie.
+
+Zmiana natê¿enia po³owów powoduje zmianê ³¹cznego rocznego natê¿enie po³owów
+1.natê¿enie po³owów w regionie [u³amek pozostawionego narybku
+2.³¹czne roczne natê¿enie po³owów w regionie
+
+Zmiana zagêszczenia planktonu chel1 powoduje zmianê zagêszczenia planktonu lcop1
+1.chel1: dostêpnoœæ planktonu [zagêszczenie Calanus helgolandicus gat. 1];
+2.lcop1: dostêpnoœæ planktonu [zagêszczenie wid³onogów gat. 1];
+
+Zmiana zagêszczenia planktonu chel2 powoduje zmianê zagêszczenia planktonu lcop2	 
+1.chel2: dostêpnoœæ planktonu [zagêszczenie Calanus helgolandicus gat. 2];
+2.chel2: dostêpnoœæ planktonu [zagêszczenie wid³onogów gat. 2];
+
+Istnieje równie¿ korelacja ujemna.
+Wraze ze wzrostem ³¹cznego rocznego natê¿enia po³owów w regionie [u³amek pozostawionego narybku], spada ³¹czna liczba ryb z³owionych w ramach po³owu [liczba œledzi]
+
+#WYKRES PREZENTUJ¥CY ZMIANÊ ROZMIARU ŒLEDZIA W CZASIE
+W zwi¹zku z tym i¿ zbiór danych nie posiada dok³adnego znacznika czasowego wzglêdem roku po³owu w grê wchodzi za³o¿enie o chronologicznoœci zbioru. Zmienna czasowa jest przedstawiona jako przyrostowa liczba rekordów (obserwacji).
+
+```{r warning=FALSE, error=FALSE}
+ggplot(herringsReplaceByMean, aes(X1, length)) + geom_point() + geom_smooth(se=TRUE) + ggtitle("Herrings length") + labs(x="dataset of 52584 surveys (past 60 years)", y="Herrings length in cm")
+
+```
+
+#REGRESJA
+Zastosowanie regresji pozwoli przewidzieæ wielkoœæ wy³owianych œledzi w przysz³oœci. Ze zbioru eleminujê kolumnê porz¹dow¹ X1, która nie powinna byæ brana pod uwagê podczas analizy. Zbiór zosta³ podzielony na ucz¹cy i testowy.
+
+```{r warning=FALSE, error=FALSE}
+fit<-select(herringsReplaceByMean,-X1)
+fit<-lm(length ~ ., fit)
+summary(fit)
+summary(fit)$r.squared
+
+rmse<-function(num) {
+  sqrt(mean(num^2))
+}
+
+rmse(fit$residuals)
+
+
+n<-nrow(herringsReplaceByMean)
+trainIndex<-sample(1:n, size = round(0.7*n), replace=FALSE)
+training<-herringsReplaceByMean[trainIndex ,]
+test<-herringsReplaceByMean[-trainIndex ,]
+
+training_ctrl<-trainControl(
+    method = "cv",
+    number=5
+)
+
+fit<-train(length ~ .,
+    data = training,
+    trControl = training_ctrl,
+    method = "rf",
+    ntree = 2
+)
+
+predi <- predict(fit, newdata = test)
+
+```
+
+#Wa¿noœæ atrybutów
+
+```{r warning=FALSE, error=FALSE}
+randfor_fit<-select(herringsReplaceByMean,-X1)
+randfor<-randomForest(length ~ .,randfor_fit)
+print(randfor)
+randfor_importance<-importance(randfor)
+randfor_importance<-data.frame(variable = rownames(randfor_importance), val = randfor_importance[, 1])
+randfor_importance$variable<-factor(randfor_importance$variable, levels = randfor_importance[order(randfor_importance$val), "variable"])
+
+ggplot(randfor_importance, aes(x = variable, y = val)) + geom_bar(stat = "identity") + ggtitle("Wa¿noœæ zmiennych")
+
+ggplot(herringsReplaceByMean, aes(x = length, y = sst)) + geom_smooth(method = "lm") + ggtitle("D³ugoœæ œledzia a temperatura wody")
+```
+
+#Wnioski
+W WYNIKU PRZEPROWADZONYCH OBLICZEÑ
+ISTANIEJE POWA¯NA PODSTAWA ABY TWIERDZIÆ, ¯E D£UGOŒÆ ŒLEDZIA JEST ZWI¥ZA Z TEMPERATUR¥ PRZY POWIERZCHNI WODY. ROZMIAR ŒLEDZIA JEST D£U¯SZY W PRZYPADKU GDY TEMPERATURA WODY JEST NI¯SZA
